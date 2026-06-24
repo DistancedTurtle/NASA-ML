@@ -11,5 +11,5 @@ import torch.optim as optim
 from pathlib import Path
 import json
 
-df = pd.read_json(f'{Path.cwd()}/data/asteroids.json')
+df = pd.read_json(f'{Path.cwd()}/data/near_earth_objects.json')
 df.info()
