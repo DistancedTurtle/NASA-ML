@@ -2,11 +2,8 @@ import torch
 import torch.nn as nn
 import pyarrow.parquet as pq
 
-input_len = len(pq.ParquetFile("data/neos_ml.parquet").schema.names) - 1
-hidden_size = 50
-
 class NEOModel(nn.Module):
-    def __init__(self):
+    def __init__(self, input_len, hidden_size):
         super().__init__()
         self.layer_1 = nn.Linear(input_len, hidden_size)
         self.ReLU = nn.ReLU()
