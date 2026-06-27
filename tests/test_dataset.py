@@ -45,8 +45,10 @@ def test_getitem_returns_feature_tensor_and_scalar_label(sample_parquet):
 def test_features_exclude_target(sample_parquet):
     ds = NEODataset(sample_parquet)
     features, _ = ds[0]
-    # full frame has N_FEATURES + 1 columns; features must drop the target
-    assert features.shape[0] == ds.NEOS.shape[1] - 1
+    # fixture has N_FEATURES + 1 columns; the target must be dropped
+    assert features.shape[0] == N_FEATURES
+    # and the dataset must expose exactly N_FEATURES feature columns
+    assert ds.features.shape[1] == N_FEATURES
 
 
 def test_label_matches_source_row(sample_parquet):

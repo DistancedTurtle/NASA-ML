@@ -219,3 +219,6 @@ __marimo__/
 
 # Data (only the top-level data dir, not src/data source code)
 /data/
+
+# Saved model weights / checkpoints (anchored to repo root)
+/checkpoints/

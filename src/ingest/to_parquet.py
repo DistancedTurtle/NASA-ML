@@ -11,10 +11,11 @@ with open(json_file_path) as f:
 
 df = pd.json_normalize(list(master_neo_dict.values()), sep="_")
 
-#string and boolean extraction from dataset
-orbit_range_pattern = r'(?P<perihelion_min>\d+\.\d+).*<.*(?P<perihelion_max>\d+\.\d+)'
-
-df[['perihelion_min', 'perihelion_max']] = df['orbital_data_orbit_class_orbit_class_range'].str.extract(orbit_range_pattern).astype(float)
+# Note: orbital_data_orbit_class_orbit_class_range is dropped, not parsed.
+# It's a textual *definition* of the orbit class (constant per class, and
+# different physical quantities per class), so any numbers extracted from it
+# are fully redundant with orbit_class_type (one-hot encoded below) and the
+# real per-asteroid orbital_data_perihelion_distance feature.
 
 dropped_cols = [
     'orbital_data_orbit_class_orbit_class_range', 
@@ -65,9 +66,7 @@ numeric_cols = ['absolute_magnitude_h',  # already float
     'orbital_data_aphelion_distance',
     'orbital_data_perihelion_time',
     'orbital_data_mean_anomaly',
-    'orbital_data_mean_motion',
-    'perihelion_min',  # already float, your extracted column
-    'perihelion_max',]
+    'orbital_data_mean_motion',]
 df[numeric_cols] = df[numeric_cols].astype(float)
 
 

@@ -1,40 +1,51 @@
 import torch
-import torch.nn
-from torch.utils.data import Dataset, DataLoader
-import os
+from torch.utils.data import Dataset
 import pandas as pd
-from pathlib import Path
 
-parquet_file = Path.cwd() / "data" / "neos_ml.parquet"
+TARGET_COLUMN = "is_potentially_hazardous_asteroid"
+
 
 class NEODataset(Dataset):
     def __init__(self, parquet_file, transform=None, target_transform=None):
-        self.NEOS = pd.read_parquet(parquet_file)
-        self.labels = self.NEOS.iloc[:, 1]
-        self.features = self.NEOS.drop(columns='is_potentially_hazardous_asteroid')
+        df = pd.read_parquet(parquet_file)
+
+        # Convert once, up front, to plain tensors. __getitem__ then just
+        # indexes these -- no per-access pandas/numpy/tensor churn.
+        features = df.drop(columns=TARGET_COLUMN).values
+        labels = df[TARGET_COLUMN].values
+        self.features = torch.tensor(features, dtype=torch.float32)
+        self.labels = torch.tensor(labels, dtype=torch.float32)
+
         self.transform = transform
         self.target_transform = target_transform
 
     def __len__(self):
-        return len(self.NEOS)
+        return self.features.shape[0]
 
     def __getitem__(self, idx):
-        features = self.features.iloc[idx, :]
-        label = self.labels.iloc[idx]
-        features = torch.tensor(features.values, dtype=torch.float32)
+        features = self.features[idx]
+        label = self.labels[idx]
 
         if self.transform:
             features = self.transform(features)
         if self.target_transform:
             label = self.target_transform(label)
-            
+
         return features, label
 
+
 def get_normalization_transform(mean, std):
-    return transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std)
-    ])
+    # as_tensor avoids a copy/warning when mean/std are already tensors;
+    # std is cloned because we mutate it below.
+    mean_tensor = torch.as_tensor(mean, dtype=torch.float32)
+    std_tensor = torch.as_tensor(std, dtype=torch.float32).clone()
 
+    std_tensor[std_tensor == 0.0] = 1.0  # avoid divide-by-zero on constant cols
 
+    def normalize(tensor):
+        standardized = (tensor - mean_tensor) / std_tensor
+        # Missing values (NaN) become 0 after standardization, i.e. imputed
+        # with the (training) mean. nan_to_num also clears any inf.
+        return torch.nan_to_num(standardized, nan=0.0)
 
+    return normalize
