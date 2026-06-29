@@ -40,12 +40,10 @@ train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, drop_last=
 cv_loader = DataLoader(cv_dataset, batch_size=32, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-# ---------------------------------------------------------------- model
 hidden_size = 50
 input_len = full_dataset.features.shape[1]
 model = NEOModel(input_len, hidden_size)
 
-# Where the best checkpoint goes. Kept out of git (see .gitignore).
 checkpoint_dir = Path.cwd() / "checkpoints"
 checkpoint_dir.mkdir(exist_ok=True)
 checkpoint_path = checkpoint_dir / "best_model.pt"
@@ -58,7 +56,7 @@ device = (
 model.to(device)
 
 learning_rate = 1e-3
-epochs = 100
+epochs = 300
 
 loss_fn = nn.BCELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
@@ -70,7 +68,11 @@ def evaluate(model, loader, loss_fn, device):
     correct = 0
     total = 0
 
-    with torch.no_grad():  
+    tp = 0  # predicted hazardous AND truly hazardous
+    fp = 0  # predicted hazardous BUT not hazardous (false alarm)
+    fn = 0  # missed a truly hazardous one
+
+    with torch.no_grad():
         for X_batch, y_batch in loader:
             X_batch = X_batch.to(device)
             y_batch = y_batch.to(device).float().unsqueeze(1)
@@ -78,11 +80,19 @@ def evaluate(model, loader, loss_fn, device):
             y_hat = model(X_batch)
             total_loss += loss_fn(y_hat, y_batch).item()
 
-            preds = (y_hat >= 0.5).float() 
+            preds = (y_hat >= 0.5).float()
             correct += (preds == y_batch).sum().item()
             total += y_batch.size(0)
 
-    return total_loss / len(loader), correct / total
+            tp += ((preds == 1) & (y_batch == 1)).sum().item()
+            fp += ((preds == 1) & (y_batch == 0)).sum().item()
+            fn += ((preds == 0) & (y_batch == 1)).sum().item()
+
+    accuracy = correct / total
+    # Guard against divide-by-zero when the model predicts no positives.
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    return total_loss / len(loader), accuracy, precision, recall
 
 
 best_cv_loss = float("inf")  
@@ -104,7 +114,7 @@ for epoch in range(epochs):
         total_loss += loss.item()
 
     train_loss = total_loss / len(train_loader)
-    cv_loss, cv_acc = evaluate(model, cv_loader, loss_fn, device)
+    cv_loss, cv_acc, cv_prec, cv_recall = evaluate(model, cv_loader, loss_fn, device)
 
     saved = ""
     if cv_loss < best_cv_loss:
@@ -125,7 +135,9 @@ for epoch in range(epochs):
         f"epoch {epoch:>2}  "
         f"train loss: {train_loss:.4f}  "
         f"cv loss: {cv_loss:.4f}  "
-        f"cv acc: {cv_acc:.4f}"
+        f"cv acc: {cv_acc:.4f}  "
+        f"cv prec: {cv_prec:.4f}  "
+        f"cv recall: {cv_recall:.4f}"
         f"{saved}"
     )
 
@@ -137,8 +149,11 @@ if RUN_TEST:
     best_model.load_state_dict(checkpoint["model_state_dict"])
     best_model.to(device)
 
-    test_loss, test_acc = evaluate(best_model, test_loader, loss_fn, device)
+    test_loss, test_acc, test_prec, test_recall = evaluate(
+        best_model, test_loader, loss_fn, device
+    )
     print(
         f"\nFINAL TEST (best epoch {checkpoint['epoch']})  "
-        f"loss: {test_loss:.4f}  acc: {test_acc:.4f}"
+        f"loss: {test_loss:.4f}  acc: {test_acc:.4f}  "
+        f"prec: {test_prec:.4f}  recall: {test_recall:.4f}"
     )
