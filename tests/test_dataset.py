@@ -45,8 +45,10 @@ def test_getitem_returns_feature_tensor_and_scalar_label(sample_parquet):
 def test_features_exclude_target(sample_parquet):
     ds = NEODataset(sample_parquet)
     features, _ = ds[0]
-    # full frame has N_FEATURES + 1 columns; features must drop the target
-    assert features.shape[0] == ds.NEOS.shape[1] - 1
+    # fixture has N_FEATURES + 1 columns; the target must be dropped
+    assert features.shape[0] == N_FEATURES
+    # and the dataset must expose exactly N_FEATURES feature columns
+    assert ds.features.shape[1] == N_FEATURES
 
 
 def test_label_matches_source_row(sample_parquet):
@@ -54,3 +56,27 @@ def test_label_matches_source_row(sample_parquet):
     # row 1 of the fixture has target == 1; confirm the dataset returns it
     _, label = ds[1]
     assert int(label) == 1
+
+def test_get_error_summary_output(capsys, sample_parquet):
+    test_data = NEODataset(sample_parquet)
+    error_msg = "ValueError('Some error message')"
+    for i in range(6):
+        test_data.error_log.append({
+            "index": i, 
+            "error": error_msg,
+        })
+
+    test_data.get_error_summary()
+    
+    captured = capsys.readouterr()
+
+    expected_output = (
+        f"Index 0: {error_msg}\n"
+        f"Index 1: {error_msg}\n"
+        f"Index 2: {error_msg}\n"
+        f"Index 3: {error_msg}\n"
+        f"Index 4: {error_msg}\n"
+        f"...1 additional errors"
+    )
+    
+    assert captured.out.strip() == expected_output.strip()

@@ -2,20 +2,14 @@ import torch
 import torch.nn as nn
 import pyarrow.parquet as pq
 
-input_len = len(pq.ParquetFile("data/neos_ml.parquet").schema.names) - 1
-hidden_size = 50
-
 class NEOModel(nn.Module):
-    def __init__(self):
+    def __init__(self, input_len, hidden_size):
         super().__init__()
-        self.layer_1 = nn.Linear(input_len, hidden_size)
-        self.ReLU = nn.ReLU()
-        self.layer_2 = nn.Linear(hidden_size, 1)
-        self.Sigmoid = nn.Sigmoid()
+        self.model = nn.Sequential(
+            nn.Linear(input_len, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1),
+        )
 
     def forward(self, x):
-        x = self.layer_1(x)
-        x = self.ReLU(x)
-        x = self.layer_2(x)
-        x = self.Sigmoid(x)
-        return(x)
+        return self.model(x)
