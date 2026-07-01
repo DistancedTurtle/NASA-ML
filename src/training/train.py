@@ -6,9 +6,13 @@ from pathlib import Path
 from src.data.dataset import NEODataset, get_normalization_transform
 from src.models.model import NEOModel
 
-# Flip to True only when done experimenting and want the final,
-# one-time test-set number. Keep it False while tuning so you don't peek.
-RUN_TEST = False
+RUN_TEST = True
+
+device = (
+    torch.accelerator.current_accelerator().type
+    if torch.accelerator.is_available()
+    else "cpu"
+)
 
 data_dir = Path.cwd() / "data"
 parquet_file = data_dir / "neos_ml.parquet"
@@ -25,11 +29,14 @@ train_dataset, cv_dataset, test_dataset = random_split(
     generator=torch.Generator().manual_seed(42),
 )
 
-# Normalization stats come from the TRAINING rows only, then the same
-# transform is applied to every split (all three share full_dataset).
-# features is now a tensor, so index by indices and reduce along dim=0.
-# NaN-aware: some columns have genuine missing values, so plain mean/std
-# would be NaN. nanmean ignores them; std is computed the same way.
+train_labels = full_dataset.labels[train_dataset.indices]
+num_pos = train_labels.sum()
+num_neg = len(train_labels) - num_pos
+pos_weight = (num_neg / num_pos).to(device)   # e.g. ~49 if 2% are hazardous
+
+print(f"hazardous in train: {num_pos.int()}/{len(train_labels)}  pos_weight={pos_weight:.1f}")
+
+
 train_features = full_dataset.features[train_dataset.indices]
 mean_vector = torch.nanmean(train_features, dim=0)
 diff = train_features - mean_vector
@@ -48,17 +55,12 @@ checkpoint_dir = Path.cwd() / "checkpoints"
 checkpoint_dir.mkdir(exist_ok=True)
 checkpoint_path = checkpoint_dir / "best_model.pt"
 
-device = (
-    torch.accelerator.current_accelerator().type
-    if torch.accelerator.is_available()
-    else "cpu"
-)
 model.to(device)
 
 learning_rate = 1e-3
-epochs = 300
+epochs = 150
 
-loss_fn = nn.BCELoss()
+loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
 
@@ -68,19 +70,20 @@ def evaluate(model, loader, loss_fn, device):
     correct = 0
     total = 0
 
-    tp = 0  # predicted hazardous AND truly hazardous
-    fp = 0  # predicted hazardous BUT not hazardous (false alarm)
-    fn = 0  # missed a truly hazardous one
+    tp = 0  
+    fp = 0  
+    fn = 0  
 
     with torch.no_grad():
         for X_batch, y_batch in loader:
             X_batch = X_batch.to(device)
             y_batch = y_batch.to(device).float().unsqueeze(1)
 
-            y_hat = model(X_batch)
+            y_hat = model(X_batch)                       
             total_loss += loss_fn(y_hat, y_batch).item()
 
-            preds = (y_hat >= 0.5).float()
+            probs = torch.sigmoid(y_hat)                 
+            preds = (probs >= 0.5).float()               
             correct += (preds == y_batch).sum().item()
             total += y_batch.size(0)
 
@@ -89,7 +92,6 @@ def evaluate(model, loader, loss_fn, device):
             fn += ((preds == 0) & (y_batch == 1)).sum().item()
 
     accuracy = correct / total
-    # Guard against divide-by-zero when the model predicts no positives.
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     return total_loss / len(loader), accuracy, precision, recall
@@ -140,6 +142,7 @@ for epoch in range(epochs):
         f"cv recall: {cv_recall:.4f}"
         f"{saved}"
     )
+    get_error_summary(full_dataset)
 
 
 if RUN_TEST:

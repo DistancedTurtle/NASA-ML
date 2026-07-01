@@ -56,3 +56,27 @@ def test_label_matches_source_row(sample_parquet):
     # row 1 of the fixture has target == 1; confirm the dataset returns it
     _, label = ds[1]
     assert int(label) == 1
+
+def test_get_error_summary_output(capsys, sample_parquet):
+    test_data = NEODataset(sample_parquet)
+    error_msg = "ValueError('Some error message')"
+    for i in range(6):
+        test_data.error_log.append({
+            "index": i, 
+            "error": error_msg,
+        })
+
+    test_data.get_error_summary()
+    
+    captured = capsys.readouterr()
+
+    expected_output = (
+        f"Index 0: {error_msg}\n"
+        f"Index 1: {error_msg}\n"
+        f"Index 2: {error_msg}\n"
+        f"Index 3: {error_msg}\n"
+        f"Index 4: {error_msg}\n"
+        f"...1 additional errors"
+    )
+    
+    assert captured.out.strip() == expected_output.strip()

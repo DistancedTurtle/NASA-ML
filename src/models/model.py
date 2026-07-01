@@ -9,7 +9,6 @@ class NEOModel(nn.Module):
             nn.Linear(input_len, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, 1),
-            nn.Sigmoid(),
         )
 
     def forward(self, x):
