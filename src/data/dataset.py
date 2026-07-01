@@ -50,7 +50,6 @@ class NEODataset(Dataset):
                 print(f"...{len(self.error_log) - 5 } additional errors")
 
 
-
 def get_normalization_transform(mean, std):
     mean_tensor = torch.as_tensor(mean, dtype=torch.float32)
     std_tensor = torch.as_tensor(std, dtype=torch.float32).clone()

@@ -6,7 +6,7 @@ from pathlib import Path
 from src.data.dataset import NEODataset, get_normalization_transform
 from src.models.model import NEOModel
 
-RUN_TEST = True
+RUN_TEST = False
 
 device = (
     torch.accelerator.current_accelerator().type
@@ -32,7 +32,7 @@ train_dataset, cv_dataset, test_dataset = random_split(
 train_labels = full_dataset.labels[train_dataset.indices]
 num_pos = train_labels.sum()
 num_neg = len(train_labels) - num_pos
-pos_weight = (num_neg / num_pos).to(device)   # e.g. ~49 if 2% are hazardous
+pos_weight = (num_neg / num_pos).to(device)
 
 print(f"hazardous in train: {num_pos.int()}/{len(train_labels)}  pos_weight={pos_weight:.1f}")
 
@@ -43,9 +43,10 @@ diff = train_features - mean_vector
 std_vector = torch.sqrt(torch.nanmean(diff * diff, dim=0))
 full_dataset.transform = get_normalization_transform(mean_vector, std_vector)
 
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, drop_last=True)
-cv_loader = DataLoader(cv_dataset, batch_size=32, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+train_loader_nn = DataLoader(train_dataset, batch_size=32, shuffle=True, drop_last=True)
+cv_loader_nn = DataLoader(cv_dataset, batch_size=32, shuffle=False)
+test_loader_nn = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
 
 hidden_size = 50
 input_len = full_dataset.features.shape[1]
@@ -58,32 +59,32 @@ checkpoint_path = checkpoint_dir / "best_model.pt"
 model.to(device)
 
 learning_rate = 1e-3
-epochs = 150
+epochs = 50
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
 
 def evaluate(model, loader, loss_fn, device):
-    model.eval()  
+    model.eval()
     total_loss = 0.0
     correct = 0
     total = 0
 
-    tp = 0  
-    fp = 0  
-    fn = 0  
+    tp = 0
+    fp = 0
+    fn = 0
 
     with torch.no_grad():
         for X_batch, y_batch in loader:
             X_batch = X_batch.to(device)
             y_batch = y_batch.to(device).float().unsqueeze(1)
 
-            y_hat = model(X_batch)                       
+            y_hat = model(X_batch)
             total_loss += loss_fn(y_hat, y_batch).item()
 
-            probs = torch.sigmoid(y_hat)                 
-            preds = (probs >= 0.5).float()               
+            probs = torch.sigmoid(y_hat)
+            preds = (probs >= 0.5).float()
             correct += (preds == y_batch).sum().item()
             total += y_batch.size(0)
 
@@ -97,13 +98,13 @@ def evaluate(model, loader, loss_fn, device):
     return total_loss / len(loader), accuracy, precision, recall
 
 
-best_cv_loss = float("inf")  
+best_cv_loss = float("inf")
 
 for epoch in range(epochs):
     model.train()
     total_loss = 0.0
 
-    for X_batch, y_batch in train_loader:
+    for X_batch, y_batch in train_loader_nn:
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device).float().unsqueeze(1)
 
@@ -115,8 +116,8 @@ for epoch in range(epochs):
 
         total_loss += loss.item()
 
-    train_loss = total_loss / len(train_loader)
-    cv_loss, cv_acc, cv_prec, cv_recall = evaluate(model, cv_loader, loss_fn, device)
+    train_loss = total_loss / len(train_loader_nn)
+    cv_loss, cv_acc, cv_prec, cv_recall = evaluate(model, cv_loader_nn, loss_fn, device)
 
     saved = ""
     if cv_loss < best_cv_loss:
@@ -142,18 +143,17 @@ for epoch in range(epochs):
         f"cv recall: {cv_recall:.4f}"
         f"{saved}"
     )
-    get_error_summary(full_dataset)
+    full_dataset.get_error_summary()
 
 
 if RUN_TEST:
-    # Reload the best checkpoint so we test the best epoch, not the last one.
     checkpoint = torch.load(checkpoint_path)
     best_model = NEOModel(checkpoint["input_len"], checkpoint["hidden_size"])
     best_model.load_state_dict(checkpoint["model_state_dict"])
     best_model.to(device)
 
     test_loss, test_acc, test_prec, test_recall = evaluate(
-        best_model, test_loader, loss_fn, device
+        best_model, test_loader_nn, loss_fn, device
     )
     print(
         f"\nFINAL TEST (best epoch {checkpoint['epoch']})  "

@@ -1,6 +1,5 @@
-import torch
 import torch.nn as nn
-import pyarrow.parquet as pq
+
 
 class NEOModel(nn.Module):
     def __init__(self, input_len, hidden_size):
