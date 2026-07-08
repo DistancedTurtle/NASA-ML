@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 from src.data.dataset import NEODataset, get_normalization_transform
 from src.models.model import NEOModel
@@ -59,7 +60,7 @@ checkpoint_path = checkpoint_dir / "best_model.pt"
 model.to(device)
 
 learning_rate = 1e-3
-epochs = 50
+epochs = 15
 
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
@@ -100,6 +101,10 @@ def evaluate(model, loader, loss_fn, device):
 
 best_cv_loss = float("inf")
 
+cv_loss_list = []
+cv_accuracy_list = []
+training_loss_list = []
+
 for epoch in range(epochs):
     model.train()
     total_loss = 0.0
@@ -117,7 +122,14 @@ for epoch in range(epochs):
         total_loss += loss.item()
 
     train_loss = total_loss / len(train_loader_nn)
+
     cv_loss, cv_acc, cv_prec, cv_recall = evaluate(model, cv_loader_nn, loss_fn, device)
+
+
+    #matplotlib stuff
+    cv_loss_list.append(cv_loss)
+    cv_accuracy_list.append(cv_acc)
+    training_loss_list.append(train_loss)
 
     saved = ""
     if cv_loss < best_cv_loss:
@@ -145,6 +157,25 @@ for epoch in range(epochs):
     )
     full_dataset.get_error_summary()
 
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+x = list(range(epochs))           
+
+ax1.plot(x, cv_loss_list, label="CV Loss", color="blue", linestyle="-", marker="o")
+ax1.plot(x, training_loss_list, label="Train Loss", color="red", linestyle="-", marker="o")
+
+ax1.set_title(f"Train and CV Loss Over {epochs} Epochs")
+ax1.set_xlabel("Epochs")
+ax1.set_ylabel("Loss")
+ax1.legend()
+
+ax2.plot(x, cv_accuracy_list, label="CV Accuracy", color="blue", linestyle="-", marker="o")
+
+ax2.set_title(f"CV Accuracy Over {epochs} Epochs")
+ax2.set_xlabel("Epochs")
+ax2.set_ylabel("Accuracy")
+ax2.legend()
+
+plt.show()
 
 if RUN_TEST:
     checkpoint = torch.load(checkpoint_path)
