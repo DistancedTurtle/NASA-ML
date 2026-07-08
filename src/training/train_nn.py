@@ -175,6 +175,10 @@ ax2.set_xlabel("Epochs")
 ax2.set_ylabel("Accuracy")
 ax2.legend()
 
+assets_dir = Path.cwd() / "assets"
+assets_dir.mkdir(exist_ok=True)
+fig.savefig(assets_dir / "training_curves.png", dpi=150, bbox_inches="tight")
+
 plt.show()
 
 if RUN_TEST:
